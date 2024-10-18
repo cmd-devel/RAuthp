@@ -26,7 +26,11 @@ fn get_cli_args() -> Command {
         .about("CLI TOTP generator")
         .subcommand_required(true)
         .arg_required_else_help(true)
-        .subcommand(Command::new(SUBCOMMAND_GEN).about("Generate TOTP codes"))
+        .subcommand(
+            Command::new(SUBCOMMAND_GEN)
+                .arg(arg!(name_filter: [NAME_FILTER] "Name filter"))
+                .about("Generate TOTP codes"),
+        )
         .subcommand(
             Command::new(SUBCOMMAND_ADD)
                 .about("Register an account")
@@ -42,7 +46,7 @@ fn get_cli_args() -> Command {
         )
 }
 
-fn handle_gen_cmd(keyring: &Keyring) -> bool {
+fn handle_gen_cmd(keyring: &Keyring, cmd_args: &ArgMatches) -> bool {
     let all_secrets = match keyring.get_all_secrets() {
         Ok(s) => s,
         Err(e) => {
@@ -50,10 +54,21 @@ fn handle_gen_cmd(keyring: &Keyring) -> bool {
             return false;
         }
     };
+
+    let name_filter_opt = cmd_args
+        .get_one::<String>("name_filter")
+        .map(|s| s.to_lowercase());
+
     println!("{} secrets found", all_secrets.len());
     let count_success = all_secrets
         .iter()
         .filter(|elt| {
+            if let Some(name_filter) = &name_filter_opt {
+                if !elt.name().to_lowercase().contains(name_filter) {
+                    return true;
+                }
+            }
+
             let decoded_secret = match Base32Upper::decode_vec(elt.secret()) {
                 Ok(d) => d,
                 Err(e) => {
@@ -147,7 +162,7 @@ fn main() {
 
     let args = get_cli_args().get_matches();
     let res = match args.subcommand() {
-        Some((SUBCOMMAND_GEN, _)) => handle_gen_cmd(&keyring),
+        Some((SUBCOMMAND_GEN, cmd_args)) => handle_gen_cmd(&keyring, cmd_args),
         Some((SUBCOMMAND_ADD, cmd_args)) => handle_add_cmd(&keyring, cmd_args),
         Some((SUBCOMMAND_DEL, cmd_args)) => handle_del_cmd(&keyring, cmd_args),
         _ => unreachable!(),
